@@ -1,0 +1,2296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RideMate — Попутчики</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --navy: #1B2A3D;
+    --navy-light: #243650;
+    --cream: #EDE3C8;
+    --burgundy: #5C1F2E;
+    --burgundy-light: #7a2a3e;
+    --bg-main: var(--navy);
+    --bg-card: var(--navy-light);
+    --bg-input: var(--navy);
+    --text-main: var(--cream);
+    --text-muted: rgba(237, 227, 200, 0.6);
+    --border: rgba(237, 227, 200, 0.1);
+    --border-light: rgba(237, 227, 200, 0.15);
+    --shadow: rgba(0,0,0,0.5);
+    --cursor-color: var(--cream);
+    --star-color: #fbbf24;
+  }
+  [data-theme="light"] {
+    --bg-main: #f5f0e6;
+    --bg-card: #ffffff;
+    --bg-input: #faf7f0;
+    --text-main: #1B2A3D;
+    --text-muted: #6b7280;
+    --border: rgba(27, 42, 61, 0.1);
+    --border-light: rgba(27, 42, 61, 0.15);
+    --shadow: rgba(27, 42, 61, 0.15);
+    --cursor-color: #1B2A3D;
+    --navy: #1B2A3D;
+    --navy-light: #ffffff;
+    --cream: #1B2A3D;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-main);
+    color: var(--text-main);
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background 0.4s, color 0.4s;
+  }
+  #bgCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+  [data-theme="light"] #bgCanvas { opacity: 0.3; }
+  .cursor {
+    width: 20px; height: 20px;
+    border: 2px solid var(--cursor-color);
+    border-radius: 50%;
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transition: transform 0.15s ease, background 0.15s ease;
+    mix-blend-mode: difference;
+  }
+  .cursor.hover { transform: scale(2.5); background: var(--burgundy); border-color: var(--burgundy); }
+
+  .auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .auth-screen.hidden { display: none; }
+  .auth-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    padding: 3rem;
+    width: 100%;
+    max-width: 460px;
+    box-shadow: 0 30px 80px var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .auth-container::before {
+    content: '';
+    position: absolute;
+    top: -100px; right: -100px;
+    width: 250px; height: 250px;
+    background: radial-gradient(circle, rgba(92, 31, 46, 0.3) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .auth-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    margin-bottom: 2rem;
+    position: relative;
+  }
+  .auth-logo .logo-mark {
+    width: 60px; height: 60px;
+    background: var(--burgundy);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    transform: rotate(-8deg);
+  }
+  .auth-logo .logo-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--text-main);
+  }
+  .auth-tabs {
+    display: flex;
+    background: var(--bg-input);
+    border-radius: 14px;
+    padding: 4px;
+    margin-bottom: 2rem;
+  }
+  .auth-tab {
+    flex: 1;
+    padding: 0.8rem;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.3s;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 1rem;
+  }
+  .auth-tab.active {
+    background: var(--burgundy);
+    color: #EDE3C8;
+  }
+  .auth-form { display: none; position: relative; }
+  .auth-form.active { display: block; animation: formIn 0.4s ease; }
+  @keyframes formIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .auth-form h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-main);
+  }
+  .auth-form .subtitle {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+  }
+  .auth-form .form-group { margin-bottom: 1rem; position: relative; }
+  .auth-form label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+  }
+  .auth-form input {
+    width: 100%;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    background: var(--bg-input);
+    color: var(--text-main);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: all 0.25s;
+  }
+  .auth-form input:focus {
+    outline: none;
+    border-color: var(--burgundy);
+    box-shadow: 0 0 0 3px rgba(92, 31, 46, 0.2);
+  }
+  .auth-form input.error {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  }
+  .email-hint {
+    font-size: 0.8rem;
+    color: #ef4444;
+    margin-top: 0.4rem;
+    display: none;
+  }
+  .email-hint.show { display: block; }
+  .auth-submit {
+    width: 100%;
+    padding: 1rem;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    border: none;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    margin-top: 0.5rem;
+    transition: all 0.3s;
+  }
+  .auth-submit:hover {
+    background: var(--burgundy-light);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(92, 31, 46, 0.4);
+  }
+  .auth-error {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 0.7rem 1rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    display: none;
+  }
+  .auth-error.show { display: block; }
+
+  .site-wrapper { display: none; }
+  .site-wrapper.visible { display: block; }
+
+  .navbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 1.2rem 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(27, 42, 61, 0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+  }
+  [data-theme="light"] .navbar {
+    background: rgba(245, 240, 230, 0.9);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    text-decoration: none;
+    color: var(--text-main);
+  }
+  .logo-mark {
+    width: 48px; height: 48px;
+    background: var(--burgundy);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    transform: rotate(-8deg);
+    transition: transform 0.3s;
+  }
+  .logo:hover .logo-mark { transform: rotate(8deg) scale(1.1); }
+  .logo-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 900;
+  }
+  .nav-links {
+    display: flex;
+    gap: 0.5rem;
+    list-style: none;
+    flex-wrap: wrap;
+  }
+  .nav-links a {
+    color: var(--text-main);
+    text-decoration: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.25s;
+    position: relative;
+    cursor: pointer;
+  }
+  .nav-links a::after {
+    content: '';
+    position: absolute;
+    bottom: 4px; left: 50%;
+    width: 0; height: 2px;
+    background: var(--burgundy);
+    transition: all 0.3s;
+    transform: translateX(-50%);
+  }
+  .nav-links a:hover::after, .nav-links a.active::after { width: 60%; }
+  .nav-actions { display: flex; gap: 0.8rem; align-items: center; }
+  .theme-toggle {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: all 0.3s;
+  }
+  .theme-toggle:hover { background: var(--burgundy); color: #EDE3C8; }
+  .user-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--bg-card);
+    padding: 0.4rem 1rem 0.4rem 0.4rem;
+    border-radius: 30px;
+    border: 1px solid var(--border);
+  }
+  .user-chip .mini-avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-family: 'Playfair Display', serif;
+  }
+  .user-chip .user-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-main);
+  }
+  .btn-logout {
+    background: transparent;
+    border: 1px solid var(--border-light);
+    color: var(--text-main);
+    padding: 0.5rem 1rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .btn-logout:hover { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; }
+  .burger {
+    display: none;
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--text-main);
+    font-size: 1.3rem;
+    cursor: pointer;
+  }
+
+  .main-content {
+    position: relative;
+    z-index: 1;
+    padding-top: 90px;
+    min-height: 100vh;
+  }
+  .page { display: none; animation: pageIn 0.6s ease; }
+  .page.active { display: block; }
+  @keyframes pageIn {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem 3rem; }
+  .page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 3rem;
+    font-weight: 900;
+    margin-bottom: 2rem;
+    line-height: 1.1;
+    color: var(--text-main);
+  }
+  .page-title span { color: var(--burgundy); }
+
+  .hero {
+    min-height: calc(100vh - 90px);
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 4rem;
+    align-items: center;
+    padding: 4rem 3rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 5rem;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 1.5rem;
+    color: var(--text-main);
+  }
+  .hero-title .accent {
+    color: var(--burgundy);
+    font-style: italic;
+    display: inline-block;
+    transform: rotate(-2deg);
+  }
+  .hero-sub {
+    font-size: 1.2rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin-bottom: 2.5rem;
+    max-width: 500px;
+  }
+  .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 2rem;
+    border-radius: 14px;
+    border: none;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.3s;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--burgundy);
+    color: #EDE3C8;
+    box-shadow: 0 10px 30px rgba(92, 31, 46, 0.4);
+  }
+  .btn-primary:hover {
+    background: var(--burgundy-light);
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(92, 31, 46, 0.6);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-main);
+    border: 2px solid var(--border-light);
+  }
+  .btn-ghost:hover { border-color: var(--burgundy); color: var(--burgundy); }
+  .btn-lg { padding: 1.2rem 2.5rem; font-size: 1.05rem; }
+  .btn-sm { padding: 0.6rem 1.2rem; font-size: 0.9rem; border-radius: 10px; }
+
+  .route-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 2.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.4s;
+  }
+  .route-card::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(92, 31, 46, 0.15) 0%, transparent 60%);
+    animation: pulse 4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.5; }
+    50% { transform: scale(1.2); opacity: 1; }
+  }
+  .route-card:hover { transform: translateY(-10px) rotate(1deg); }
+  .route-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 1;
+  }
+  .route-badge {
+    background: var(--burgundy);
+    color: #EDE3C8;
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .route-price-big {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--text-main);
+  }
+  .route-points {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .route-point { display: flex; align-items: center; gap: 1.2rem; }
+  .route-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .route-dot.start { background: var(--burgundy); box-shadow: 0 0 20px var(--burgundy); }
+  .route-dot.end { background: var(--burgundy-light); box-shadow: 0 0 20px var(--burgundy-light); }
+  .route-point:not(:last-child) .route-dot::after {
+    content: '';
+    position: absolute;
+    top: 16px; left: 7px;
+    width: 2px; height: 40px;
+    background: linear-gradient(to bottom, var(--burgundy), var(--burgundy-light));
+  }
+  .route-point-info { flex: 1; }
+  .route-point-city { font-size: 1.3rem; font-weight: 700; color: var(--text-main); }
+  .route-point-time { font-size: 0.9rem; color: var(--text-muted); }
+
+  .features { padding: 4rem 3rem; max-width: 1400px; margin: 0 auto; }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.5rem;
+    margin-bottom: 3rem;
+    text-align: center;
+    color: var(--text-main);
+  }
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+  }
+  .feature-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2rem;
+    transition: all 0.4s;
+    position: relative;
+    overflow: hidden;
+  }
+  .feature-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 4px;
+    background: var(--burgundy);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s;
+  }
+  .feature-card:hover::before { transform: scaleX(1); }
+  .feature-card:hover {
+    transform: translateY(-8px);
+    border-color: var(--burgundy);
+  }
+  .feature-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    display: inline-block;
+    transition: transform 0.3s;
+  }
+  .feature-card:hover .feature-icon { transform: scale(1.2) rotate(-5deg); }
+  .feature-card h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-main);
+  }
+  .feature-card p { color: var(--text-muted); font-size: 0.95rem; }
+
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 2.5rem;
+    margin-bottom: 2rem;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.2rem;
+    margin-bottom: 1.2rem;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; position: relative; }
+  .form-group label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-group input, .form-group textarea, .form-group select {
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    background: var(--bg-input);
+    color: var(--text-main);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: all 0.25s;
+  }
+  .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--burgundy);
+    box-shadow: 0 0 0 3px rgba(92, 31, 46, 0.2);
+  }
+
+  .autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    margin-top: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 10;
+    box-shadow: 0 10px 30px var(--shadow);
+    display: none;
+  }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item {
+    padding: 0.7rem 1rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text-main);
+    transition: background 0.2s;
+    border-bottom: 1px solid var(--border);
+  }
+  .autocomplete-item:last-child { border-bottom: none; }
+  .autocomplete-item:hover, .autocomplete-item.active {
+    background: var(--burgundy);
+    color: #EDE3C8;
+  }
+  .autocomplete-item .city-name { font-weight: 600; }
+  .autocomplete-item .city-region { font-size: 0.8rem; color: var(--text-muted); }
+  .autocomplete-item:hover .city-region, .autocomplete-item.active .city-region { color: rgba(237, 227, 200, 0.7); }
+
+  .search-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 1rem;
+    padding: 1.2rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    margin-bottom: 2rem;
+    position: relative;
+  }
+  .search-bar .form-group { margin-bottom: 0; }
+
+  .trips-list { display: flex; flex-direction: column; gap: 1rem; }
+  .trip-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1.5rem 2rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.5rem;
+    align-items: center;
+    transition: all 0.3s;
+  }
+  .trip-card:hover {
+    transform: translateX(8px);
+    border-color: var(--burgundy);
+    box-shadow: -8px 0 30px rgba(92, 31, 46, 0.2);
+  }
+  .trip-avatar {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.4rem;
+    font-family: 'Playfair Display', serif;
+  }
+  .trip-info h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    margin-bottom: 0.4rem;
+    color: var(--text-main);
+  }
+  .trip-meta {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  .trip-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .trip-rating {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .trip-rating .stars {
+    color: var(--star-color);
+    font-size: 1rem;
+  }
+  .trip-rating .rating-num {
+    font-weight: 700;
+    color: var(--text-main);
+    font-size: 0.95rem;
+  }
+  .trip-rating .count {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .trip-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .trip-price {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--text-main);
+    margin-bottom: 0.5rem;
+  }
+
+  .chat-wrapper {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: 70vh;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    overflow: hidden;
+  }
+  .chat-wrapper.support-chat { grid-template-columns: 1fr; }
+  .chat-sidebar {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-header {
+    padding: 1.2rem;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    color: var(--text-main);
+  }
+  .chat-contacts { overflow-y: auto; flex: 1; }
+  .chat-contact {
+    display: flex;
+    gap: 0.8rem;
+    padding: 1rem 1.2rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+  .chat-contact:hover { background: rgba(92, 31, 46, 0.1); }
+  .chat-contact.active {
+    background: rgba(92, 31, 46, 0.2);
+    border-left: 3px solid var(--burgundy);
+  }
+  .chat-contact .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-family: 'Playfair Display', serif;
+  }
+  .contact-name { font-weight: 600; color: var(--text-main); }
+  .contact-msg { font-size: 0.85rem; color: var(--text-muted); }
+  .chat-main { display: flex; flex-direction: column; }
+  .chat-top {
+    padding: 1.2rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+  }
+  .chat-name { font-weight: 700; font-family: 'Playfair Display', serif; font-size: 1.1rem; color: var(--text-main); }
+  .chat-status { font-size: 0.8rem; color: #10b981; }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  .message {
+    max-width: 70%;
+    padding: 0.8rem 1.1rem;
+    border-radius: 16px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    animation: msgIn 0.3s ease;
+  }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .message.in {
+    background: var(--bg-input);
+    color: var(--text-main);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .message.out {
+    background: var(--burgundy);
+    color: #EDE3C8;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+  }
+  .message .time {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.6;
+    margin-top: 0.2rem;
+  }
+  .chat-input {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.8rem;
+  }
+  .chat-input input {
+    flex: 1;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    background: var(--bg-input);
+    color: var(--text-main);
+    font-family: inherit;
+  }
+
+  .profile-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 2.5rem;
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  .profile-avatar {
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    font-family: 'Playfair Display', serif;
+    border: 4px solid var(--text-main);
+  }
+  .profile-info h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    margin-bottom: 0.3rem;
+    color: var(--text-main);
+  }
+  .profile-info p { color: var(--text-muted); }
+
+  .footer {
+    position: relative;
+    z-index: 1;
+    margin-top: 4rem;
+    padding: 2rem 3rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .modal.show { display: flex; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .modal-content {
+    background: var(--bg-card);
+    border-radius: 24px;
+    width: 100%;
+    max-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+  }
+  .modal-content.large { max-width: 900px; }
+  .modal-header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+  }
+  .modal-header h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    color: var(--text-main);
+  }
+  .modal-close {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-main);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .modal-close:hover { background: var(--burgundy); color: #EDE3C8; border-color: var(--burgundy); }
+  .modal-body { padding: 2rem; }
+
+  .review-item {
+    padding: 1rem;
+    background: var(--bg-input);
+    border-radius: 14px;
+    margin-bottom: 0.8rem;
+    border: 1px solid var(--border);
+  }
+  .review-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .review-item-author {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .review-item-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--burgundy);
+    color: #EDE3C8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-family: 'Playfair Display', serif;
+    font-size: 0.9rem;
+  }
+  .review-item-name { font-weight: 600; color: var(--text-main); }
+  .review-item-date { font-size: 0.8rem; color: var(--text-muted); }
+  .review-item-stars { color: var(--star-color); font-size: 0.9rem; }
+  .review-item-text { color: var(--text-main); line-height: 1.5; font-size: 0.95rem; }
+  .review-item-route {
+    display: inline-block;
+    background: var(--bg-card);
+    padding: 0.2rem 0.7rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+  }
+
+  .add-review-inline {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .add-review-inline h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    color: var(--text-main);
+  }
+  .star-rating {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 1rem;
+  }
+  .star-rating .star {
+    font-size: 1.8rem;
+    cursor: pointer;
+    color: var(--border-light);
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .star-rating .star:hover,
+  .star-rating .star.active {
+    color: var(--star-color);
+    transform: scale(1.15);
+  }
+
+  #mapContainer {
+    width: 100%;
+    height: 450px;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .map-info {
+    padding: 1rem 0 0;
+    display: flex;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .map-info-item { text-align: center; }
+  .map-info-item .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .map-info-item .value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  .no-reviews {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem;
+    font-size: 0.95rem;
+  }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; text-align: center; padding: 2rem; }
+    .hero-title { font-size: 3rem; }
+    .hero-actions { justify-content: center; }
+    .chat-wrapper { grid-template-columns: 1fr; height: 80vh; }
+    .chat-sidebar { display: none; }
+    .nav-links {
+      display: none;
+      position: absolute;
+      top: 100%; left: 0; right: 0;
+      flex-direction: column;
+      background: var(--bg-card);
+      padding: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .nav-links.open { display: flex; }
+    .burger { display: block; }
+    .search-bar { grid-template-columns: 1fr; }
+    .trip-card { grid-template-columns: 1fr; text-align: center; }
+    .profile-card { flex-direction: column; text-align: center; }
+    .container { padding: 1.5rem; }
+    .cursor { display: none; }
+    .user-chip .user-name { display: none; }
+    #mapContainer { height: 300px; }
+  }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg-main); }
+  ::-webkit-scrollbar-thumb { background: var(--burgundy); border-radius: 5px; }
+
+  .leaflet-popup-content-wrapper {
+    border-radius: 12px;
+    font-family: 'Inter', sans-serif;
+  }
+  .leaflet-popup-content {
+    margin: 12px 16px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+<div class="cursor" id="cursor"></div>
+
+<!-- ===== ЭКРАН АВТОРИЗАЦИИ ===== -->
+<div class="auth-screen" id="authScreen">
+  <div class="auth-container">
+    <div class="auth-logo">
+      <div class="logo-mark">🚗</div>
+      <div class="logo-text">RideMate</div>
+    </div>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Вход</button>
+      <button type="button" class="auth-tab" data-tab="register">Регистрация</button>
+    </div>
+
+    <form class="auth-form active" id="loginForm">
+      <h2>Добро пожаловать</h2>
+      <p class="subtitle">Войдите, чтобы продолжить</p>
+      <div class="auth-error" id="loginError"></div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" name="email" required placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label>Пароль</label>
+        <input type="password" name="password" required placeholder="••••••••">
+      </div>
+      <button type="submit" class="auth-submit">Войти</button>
+    </form>
+
+    <form class="auth-form" id="registerForm">
+      <h2>Создать аккаунт</h2>
+      <p class="subtitle">Присоединяйтесь к сообществу</p>
+      <div class="auth-error" id="registerError"></div>
+      <div class="form-group">
+        <label>Имя</label>
+        <input type="text" name="name" required placeholder="Как вас зовут?">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" name="email" id="regEmail" required placeholder="you@example.com" autocomplete="off">
+        <div class="email-hint" id="emailHint"></div>
+      </div>
+      <div class="form-group">
+        <label>Телефон</label>
+        <input type="tel" name="phone" required placeholder="+7 (___) ___-__-__">
+      </div>
+      <div class="form-group">
+        <label>Пароль</label>
+        <input type="password" name="password" id="regPassword" required minlength="6" placeholder="Минимум 6 символов">
+      </div>
+      <button type="submit" class="auth-submit">Зарегистрироваться</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===== ОСНОВНОЙ САЙТ ===== -->
+<div class="site-wrapper" id="siteWrapper">
+  <nav class="navbar">
+    <a href="#" class="logo" data-page="home">
+      <div class="logo-mark">🚗</div>
+      <div class="logo-text">RideMate</div>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#" data-page="home">Главная</a></li>
+      <li><a href="#" data-page="create">Создать</a></li>
+      <li><a href="#" data-page="search">Поиск</a></li>
+      <li><a href="#" data-page="chat">Чат</a></li>
+      <li><a href="#" data-page="support">Поддержка</a></li>
+      <li><a href="#" data-page="profile">Профиль</a></li>
+    </ul>
+    <div class="nav-actions">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Сменить тему">🌙</button>
+      <div class="user-chip">
+        <div class="mini-avatar" id="navAvatar">?</div>
+        <div class="user-name" id="navName">Гость</div>
+      </div>
+      <button type="button" class="btn-logout" id="logoutBtn">Выйти</button>
+      <button type="button" class="burger" id="burger">☰</button>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <section class="page active" id="page-home">
+      <div class="hero">
+        <div>
+          <h1 class="hero-title">Едем <span class="accent">вместе</span>,<br>экономим вместе</h1>
+          <p class="hero-sub">Находи попутчиков в любой город. Безопасно, быстро, с комфортом. Дели дорогу — дели расходы.</p>
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary btn-lg" data-page="search">🔍 Найти поездку</button>
+            <button type="button" class="btn btn-ghost btn-lg" data-page="create">➕ Создать</button>
+          </div>
+        </div>
+        <div class="route-card">
+          <div class="route-header">
+            <div class="route-badge">● Активно</div>
+            <div class="route-price-big">1 500 ₽</div>
+          </div>
+          <div class="route-points">
+            <div class="route-point">
+              <div class="route-dot start"></div>
+              <div class="route-point-info">
+                <div class="route-point-city">Москва</div>
+                <div class="route-point-time">08:00 · м. Киевская</div>
+              </div>
+            </div>
+            <div class="route-point">
+              <div class="route-dot end"></div>
+              <div class="route-point-info">
+                <div class="route-point-city">Санкт-Петербург</div>
+                <div class="route-point-time">16:30 · Московский вокзал</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="features">
+        <h2 class="section-title">Почему RideMate</h2>
+        <div class="features-grid">
+          <div class="feature-card"><div class="feature-icon">🛡️</div><h3>Безопасность</h3><p>Верификация водителей, отзывы и рейтинги.</p></div>
+          <div class="feature-card"><div class="feature-icon">💰</div><h3>Экономия</h3><p>Делите расходы на топливо. В 2-3 раза дешевле поезда.</p></div>
+          <div class="feature-card"><div class="feature-icon">⚡</div><h3>Быстрый поиск</h3><p>Найдите попутчика за пару минут.</p></div>
+          <div class="feature-card"><div class="feature-icon">💬</div><h3>Прямой чат</h3><p>Общайтесь с водителем напрямую.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-create">
+      <div class="container">
+        <h1 class="page-title">Создать <span>поездку</span></h1>
+        <form class="form-card" id="createForm">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Откуда</label>
+              <input type="text" name="from" id="createFrom" placeholder="Город отправления" required autocomplete="off">
+              <div class="autocomplete-list" id="acFrom"></div>
+            </div>
+            <div class="form-group">
+              <label>Куда</label>
+              <input type="text" name="to" id="createTo" placeholder="Город прибытия" required autocomplete="off">
+              <div class="autocomplete-list" id="acTo"></div>
+            </div>
+            <div class="form-group"><label>Дата</label><input type="date" name="date" required></div>
+            <div class="form-group"><label>Время</label><input type="time" name="time" required></div>
+            <div class="form-group"><label>Мест</label><input type="number" name="seats" min="1" max="8" value="3" required></div>
+            <div class="form-group"><label>Цена за место (₽)</label><input type="number" name="price" min="0" value="500" required></div>
+          </div>
+          <div class="form-group"><label>Комментарий</label><textarea name="comment" rows="3" placeholder="Марка авто, багаж, курение..."></textarea></div>
+          <button type="submit" class="btn btn-primary btn-lg">Опубликовать поездку</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="page" id="page-search">
+      <div class="container">
+        <h1 class="page-title">Поиск <span>поездок</span></h1>
+        <div class="search-bar">
+          <div class="form-group">
+            <input type="text" id="searchFrom" placeholder="Откуда" autocomplete="off">
+            <div class="autocomplete-list" id="acSearchFrom"></div>
+          </div>
+          <div class="form-group">
+            <input type="text" id="searchTo" placeholder="Куда" autocomplete="off">
+            <div class="autocomplete-list" id="acSearchTo"></div>
+          </div>
+          <div class="form-group"><input type="date" id="searchDate"></div>
+          <button type="button" class="btn btn-primary" id="searchBtn" style="align-self:end;">Найти</button>
+        </div>
+        <div class="trips-list" id="tripsList"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-chat">
+      <div class="container">
+        <h1 class="page-title">Чат с <span>водителем</span></h1>
+        <div class="chat-wrapper">
+          <div class="chat-sidebar">
+            <div class="chat-header">Диалоги</div>
+            <div class="chat-contacts" id="chatContacts"></div>
+          </div>
+          <div class="chat-main">
+            <div class="chat-top">
+              <div class="avatar" id="chatAvatar">?</div>
+              <div>
+                <div class="chat-name" id="chatName">Выберите диалог</div>
+                <div class="chat-status">● В сети</div>
+              </div>
+            </div>
+            <div class="chat-messages" id="chatMessages"></div>
+            <form class="chat-input" id="chatForm">
+              <input type="text" id="chatInput" placeholder="Написать сообщение..." autocomplete="off">
+              <button type="submit" class="btn btn-primary">➤</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-profile">
+      <div class="container">
+        <h1 class="page-title">Мой <span>профиль</span></h1>
+        <div class="profile-card">
+          <div class="profile-avatar" id="profileAvatar">?</div>
+          <div class="profile-info">
+            <h2 id="profileName">Гость</h2>
+            <p id="profileEmail">—</p>
+          </div>
+        </div>
+        <form class="form-card" id="profileForm">
+          <h3 style="margin-bottom:1rem; font-family:'Playfair Display',serif; font-size:1.5rem; color:var(--text-main);">Редактировать</h3>
+          <div class="form-grid">
+            <div class="form-group"><label>Имя</label><input type="text" name="name" id="profName"></div>
+            <div class="form-group"><label>Email</label><input type="email" name="email" id="profEmail"></div>
+            <div class="form-group"><label>Телефон</label><input type="tel" name="phone" id="profPhone"></div>
+            <div class="form-group"><label>Город</label><input type="text" name="city" id="profCity"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">Сохранить</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="page" id="page-support">
+      <div class="container">
+        <h1 class="page-title">Чат <span>поддержки</span></h1>
+        <div class="chat-wrapper support-chat">
+          <div class="chat-main full">
+            <div class="chat-top">
+              <div class="avatar">🎧</div>
+              <div>
+                <div class="chat-name">Служба поддержки</div>
+                <div class="chat-status">● Обычно отвечаем за 5 минут</div>
+              </div>
+            </div>
+            <div class="chat-messages" id="supportMessages"></div>
+            <form class="chat-input" id="supportForm">
+              <input type="text" id="supportInput" placeholder="Опишите вашу проблему..." autocomplete="off">
+              <button type="submit" class="btn btn-primary">➤</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">© 2026 RideMate · Сделано с ❤️ для попутчиков</footer>
+</div>
+
+<!-- ===== МОДАЛКА ОТЗЫВОВ ===== -->
+<div class="modal" id="reviewsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="reviewsModalTitle">Отзывы</h3>
+      <button type="button" class="modal-close" data-close="reviewsModal">✕</button>
+    </div>
+    <div class="modal-body" id="reviewsModalBody"></div>
+  </div>
+</div>
+
+<!-- ===== МОДАЛКА КАРТЫ ===== -->
+<div class="modal" id="mapModal">
+  <div class="modal-content large">
+    <div class="modal-header">
+      <h3 id="mapTitle">Маршрут</h3>
+      <button type="button" class="modal-close" data-close="mapModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="mapContainer"></div>
+      <div class="map-info" id="mapInfo"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ===== БАЗА ГОРОДОВ С КООРДИНАТАМИ =====
+const CITIES = [
+  { name: 'Москва', region: 'Московская область', lat: 55.7558, lng: 37.6173 },
+  { name: 'Санкт-Петербург', region: 'Ленинградская область', lat: 59.9343, lng: 30.3351 },
+  { name: 'Новосибирск', region: 'Новосибирская область', lat: 55.0084, lng: 82.9357 },
+  { name: 'Екатеринбург', region: 'Свердловская область', lat: 56.8389, lng: 60.6057 },
+  { name: 'Казань', region: 'Татарстан', lat: 55.7887, lng: 49.1221 },
+  { name: 'Нижний Новгород', region: 'Нижегородская область', lat: 56.2965, lng: 43.9361 },
+  { name: 'Челябинск', region: 'Челябинская область', lat: 55.1644, lng: 61.4368 },
+  { name: 'Самара', region: 'Самарская область', lat: 53.2001, lng: 50.15 },
+  { name: 'Омск', region: 'Омская область', lat: 54.9885, lng: 73.3242 },
+  { name: 'Ростов-на-Дону', region: 'Ростовская область', lat: 47.2357, lng: 39.7015 },
+  { name: 'Уфа', region: 'Башкортостан', lat: 54.7388, lng: 55.9721 },
+  { name: 'Красноярск', region: 'Красноярский край', lat: 56.0153, lng: 92.8932 },
+  { name: 'Воронеж', region: 'Воронежская область', lat: 51.6720, lng: 39.1843 },
+  { name: 'Пермь', region: 'Пермский край', lat: 58.0105, lng: 56.2502 },
+  { name: 'Волгоград', region: 'Волгоградская область', lat: 48.7080, lng: 44.5133 },
+  { name: 'Краснодар', region: 'Краснодарский край', lat: 45.0355, lng: 38.9753 },
+  { name: 'Саратов', region: 'Саратовская область', lat: 51.5924, lng: 46.0348 },
+  { name: 'Тюмень', region: 'Тюменская область', lat: 57.1522, lng: 65.5272 },
+  { name: 'Тольятти', region: 'Самарская область', lat: 53.5303, lng: 49.3461 },
+  { name: 'Ижевск', region: 'Удмуртия', lat: 56.8527, lng: 53.2041 },
+  { name: 'Барнаул', region: 'Алтайский край', lat: 53.3606, lng: 83.7636 },
+  { name: 'Ульяновск', region: 'Ульяновская область', lat: 54.3142, lng: 48.4031 },
+  { name: 'Иркутск', region: 'Иркутская область', lat: 52.2978, lng: 104.2964 },
+  { name: 'Хабаровск', region: 'Хабаровский край', lat: 48.4827, lng: 135.0839 },
+  { name: 'Ярославль', region: 'Ярославская область', lat: 57.6261, lng: 39.8845 },
+  { name: 'Владивосток', region: 'Приморский край', lat: 43.1155, lng: 131.8855 },
+  { name: 'Махачкала', region: 'Дагестан', lat: 42.9849, lng: 47.5047 },
+  { name: 'Томск', region: 'Томская область', lat: 56.4977, lng: 84.9744 },
+  { name: 'Оренбург', region: 'Оренбургская область', lat: 51.7727, lng: 55.0988 },
+  { name: 'Кемерово', region: 'Кемеровская область', lat: 55.3333, lng: 86.0833 },
+  { name: 'Новокузнецк', region: 'Кемеровская область', lat: 53.7557, lng: 87.1099 },
+  { name: 'Рязань', region: 'Рязанская область', lat: 54.6269, lng: 39.6916 },
+  { name: 'Астрахань', region: 'Астраханская область', lat: 46.3497, lng: 48.0408 },
+  { name: 'Набережные Челны', region: 'Татарстан', lat: 55.7251, lng: 52.4069 },
+  { name: 'Пенза', region: 'Пензенская область', lat: 53.2007, lng: 45.0046 },
+  { name: 'Липецк', region: 'Липецкая область', lat: 52.6031, lng: 39.5708 },
+  { name: 'Тула', region: 'Тульская область', lat: 54.1961, lng: 37.6182 },
+  { name: 'Киров', region: 'Кировская область', lat: 58.6035, lng: 49.6680 },
+  { name: 'Чебоксары', region: 'Чувашия', lat: 56.1322, lng: 47.2519 },
+  { name: 'Калининград', region: 'Калининградская область', lat: 54.7104, lng: 20.4522 },
+  { name: 'Курск', region: 'Курская область', lat: 51.7373, lng: 36.1873 },
+  { name: 'Ставрополь', region: 'Ставропольский край', lat: 45.0428, lng: 41.9734 },
+  { name: 'Улан-Удэ', region: 'Бурятия', lat: 51.8272, lng: 107.6063 },
+  { name: 'Тверь', region: 'Тверская область', lat: 56.8584, lng: 35.9006 },
+  { name: 'Магнитогорск', region: 'Челябинская область', lat: 53.4072, lng: 59.0472 },
+  { name: 'Сочи', region: 'Краснодарский край', lat: 43.6028, lng: 39.7342 },
+  { name: 'Иваново', region: 'Ивановская область', lat: 56.9977, lng: 40.9736 },
+  { name: 'Брянск', region: 'Брянская область', lat: 53.2521, lng: 34.3717 },
+  { name: 'Белгород', region: 'Белгородская область', lat: 50.5977, lng: 36.5871 },
+  { name: 'Сургут', region: 'Ханты-Мансийский АО', lat: 61.2500, lng: 73.4167 },
+  { name: 'Владимир', region: 'Владимирская область', lat: 56.1366, lng: 40.3966 },
+  { name: 'Архангельск', region: 'Архангельская область', lat: 64.5401, lng: 40.5433 },
+  { name: 'Чита', region: 'Забайкальский край', lat: 52.0340, lng: 113.4995 },
+  { name: 'Калуга', region: 'Калужская область', lat: 54.5293, lng: 36.2754 },
+  { name: 'Смоленск', region: 'Смоленская область', lat: 54.7818, lng: 32.0401 },
+  { name: 'Волжский', region: 'Волгоградская область', lat: 48.7854, lng: 44.7759 },
+  { name: 'Саранск', region: 'Мордовия', lat: 54.1838, lng: 45.1749 },
+  { name: 'Курган', region: 'Курганская область', lat: 55.4500, lng: 65.3333 },
+  { name: 'Орёл', region: 'Орловская область', lat: 52.9651, lng: 36.0785 },
+  { name: 'Якутск', region: 'Саха (Якутия)', lat: 62.0355, lng: 129.6755 },
+  { name: 'Мурманск', region: 'Мурманская область', lat: 68.9585, lng: 33.0827 },
+  { name: 'Грозный', region: 'Чечня', lat: 43.3181, lng: 45.6986 },
+  { name: 'Вологда', region: 'Вологодская область', lat: 59.2239, lng: 39.8847 },
+  { name: 'Тамбов', region: 'Тамбовская область', lat: 52.7319, lng: 41.4520 }
+];
+
+function findCity(name) {
+  return CITIES.find(c => c.name.toLowerCase() === name.toLowerCase());
+}
+
+// ===== АВТОДОПОЛНЕНИЕ =====
+function setupAutocomplete(inputId, listId) {
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+  let activeIndex = -1;
+  let currentItems = [];
+
+  function showList(items) {
+    currentItems = items;
+    if (items.length === 0) { list.classList.remove('show'); return; }
+    list.innerHTML = items.map((c, i) => `
+      <div class="autocomplete-item" data-index="${i}">
+        <div class="city-name">${c.name}</div>
+        <div class="city-region">${c.region}</div>
+      </div>
+    `).join('');
+    list.classList.add('show');
+    activeIndex = -1;
+  }
+
+  input.addEventListener('input', () => {
+    const val = input.value.trim().toLowerCase();
+    if (val.length < 1) { list.classList.remove('show'); return; }
+    const filtered = CITIES.filter(c =>
+      c.name.toLowerCase().includes(val) || c.region.toLowerCase().includes(val)
+    ).slice(0, 8);
+    showList(filtered);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (!list.classList.contains('show')) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = (activeIndex + 1) % currentItems.length;
+      highlightItem();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = activeIndex <= 0 ? currentItems.length - 1 : activeIndex - 1;
+      highlightItem();
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      selectItem(currentItems[activeIndex]);
+    } else if (e.key === 'Escape') {
+      list.classList.remove('show');
+    }
+  });
+
+  function highlightItem() {
+    list.querySelectorAll('.autocomplete-item').forEach((el, i) => {
+      el.classList.toggle('active', i === activeIndex);
+    });
+  }
+
+  function selectItem(city) {
+    input.value = city.name;
+    list.classList.remove('show');
+  }
+
+  list.addEventListener('click', (e) => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item) selectItem(currentItems[parseInt(item.dataset.index)]);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!input.contains(e.target) && !list.contains(e.target)) list.classList.remove('show');
+  });
+}
+
+setupAutocomplete('createFrom', 'acFrom');
+setupAutocomplete('createTo', 'acTo');
+setupAutocomplete('searchFrom', 'acSearchFrom');
+setupAutocomplete('searchTo', 'acSearchTo');
+
+// ===== CANVAS ФОН =====
+const canvas = document.getElementById('bgCanvas');
+const ctx = canvas.getContext('2d');
+let width, height, particles, mouse;
+function resize() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+mouse = { x: width / 2, y: height / 2 };
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+
+class Particle {
+  constructor() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.size = Math.random() * 2 + 1;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 150) {
+      const force = (150 - dist) / 150;
+      this.x -= dx * force * 0.02;
+      this.y -= dy * force * 0.02;
+    }
+    if (this.x < 0 || this.x > width) this.vx *= -1;
+    if (this.y < 0 || this.y > height) this.vy *= -1;
+  }
+  draw() {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    ctx.fillStyle = isLight ? 'rgba(92, 31, 46, 0.3)' : 'rgba(237, 227, 200, 0.4)';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+function initParticles() {
+  particles = [];
+  const count = Math.min(120, Math.floor((width * height) / 15000));
+  for (let i = 0; i < count; i++) particles.push(new Particle());
+}
+initParticles();
+function animate() {
+  ctx.clearRect(0, 0, width, height);
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 120) {
+        ctx.strokeStyle = isLight
+          ? `rgba(92, 31, 46, ${0.2 * (1 - dist / 120)})`
+          : `rgba(92, 31, 46, ${0.3 * (1 - dist / 120)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  particles.forEach(p => { p.update(); p.draw(); });
+  requestAnimationFrame(animate);
+}
+animate();
+
+// ===== КУРСОР =====
+const cursor = document.getElementById('cursor');
+document.addEventListener('mousemove', e => {
+  cursor.style.left = e.clientX - 10 + 'px';
+  cursor.style.top = e.clientY - 10 + 'px';
+});
+document.addEventListener('mouseover', e => {
+  if (e.target.matches('a, button, input, textarea, select, .autocomplete-item, .chat-contact, .star, .trip-card, .modal-close')) {
+    cursor.classList.add('hover');
+  }
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.matches('a, button, input, textarea, select, .autocomplete-item, .chat-contact, .star, .trip-card, .modal-close')) {
+    cursor.classList.remove('hover');
+  }
+});
+
+// ===== ДЕЛЕГИРОВАНИЕ КЛИКОВ =====
+document.addEventListener('click', e => {
+  // Кнопка темы — обрабатывается отдельно, не трогаем здесь
+  if (e.target.closest('#themeToggle')) return;
+
+  // Закрытие модалок
+  const closeBtn = e.target.closest('[data-close]');
+  if (closeBtn) {
+    const modalId = closeBtn.dataset.close;
+    document.getElementById(modalId).classList.remove('show');
+    if (modalId === 'mapModal' && mapInstance) {
+      mapInstance.remove();
+      mapInstance = null;
+    }
+    return;
+  }
+
+  // Навигация
+  const pageLink = e.target.closest('[data-page]');
+  if (pageLink) {
+    e.preventDefault();
+    navigate(pageLink.dataset.page);
+  }
+});
+
+// ===== НАВИГАЦИЯ =====
+function navigate(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById('page-' + pageId);
+  if (target) target.classList.add('active');
+  else document.getElementById('page-home').classList.add('active');
+  document.querySelectorAll('.nav-links a').forEach(a => {
+    a.classList.toggle('active', a.dataset.page === pageId);
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('navLinks').classList.remove('open');
+
+  // При переходе в поиск — показываем поездки
+  if (pageId === 'search') {
+    renderTrips();
+  }
+}
+
+// ===== ВАЛИДАЦИЯ EMAIL =====
+const regEmail = document.getElementById('regEmail');
+const emailHint = document.getElementById('emailHint');
+
+const EMAIL_RULES = {
+  format: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  hasAt: /@/,
+  hasDot: /\./,
+  hasDomain: /\.[a-zA-Z]{2,}$/,
+  noSpaces: /^\S+$/,
+  minLocal: /^[^\s@]{2,}@/,
+};
+
+function validateEmail(email) {
+  if (!email) return { valid: false, msg: '' };
+  if (!EMAIL_RULES.noSpaces.test(email)) return { valid: false, msg: '❌ Email не должен содержать пробелы' };
+  if (!EMAIL_RULES.hasAt.test(email)) return { valid: false, msg: '❌ Отсутствует символ @' };
+  if (!EMAIL_RULES.hasDot.test(email)) return { valid: false, msg: '❌ Отсутствует точка (.)' };
+  if (!EMAIL_RULES.minLocal.test(email)) return { valid: false, msg: '❌ Перед @ должно быть минимум 2 символа' };
+  if (!EMAIL_RULES.hasDomain.test(email)) return { valid: false, msg: '❌ Неверный домен (нужно .com, .ru, .net и т.д.)' };
+  if (!EMAIL_RULES.format.test(email)) return { valid: false, msg: '❌ Неверный формат email' };
+  return { valid: true, msg: '✅ Email корректен' };
+}
+
+regEmail.addEventListener('input', () => {
+  const val = regEmail.value.trim();
+  if (val.length === 0) {
+    emailHint.classList.remove('show');
+    regEmail.classList.remove('error');
+    return;
+  }
+  const result = validateEmail(val);
+  emailHint.textContent = result.msg;
+  if (result.valid) {
+    emailHint.style.color = '#10b981';
+    emailHint.classList.add('show');
+    regEmail.classList.remove('error');
+  } else {
+    emailHint.style.color = '#ef4444';
+    emailHint.classList.add('show');
+    regEmail.classList.add('error');
+  }
+});
+
+// ===== АВТОРИЗАЦИЯ =====
+const authScreen = document.getElementById('authScreen');
+const siteWrapper = document.getElementById('siteWrapper');
+const authTabs = document.querySelectorAll('.auth-tab');
+
+authTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    authTabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+    document.getElementById(tab.dataset.tab + 'Form').classList.add('active');
+    document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show'));
+    emailHint.classList.remove('show');
+    regEmail.classList.remove('error');
+  });
+});
+
+document.getElementById('registerForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = fd.get('name').trim();
+  const email = fd.get('email').trim();
+  const phone = fd.get('phone').trim();
+  const password = fd.get('password');
+
+  const emailCheck = validateEmail(email);
+  if (!emailCheck.valid) {
+    showError('registerError', emailCheck.msg);
+    regEmail.classList.add('error');
+    return;
+  }
+
+  if (password.length < 6) {
+    showError('registerError', 'Пароль должен быть минимум 6 символов');
+    return;
+  }
+
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+    showError('registerError', 'Пользователь с таким email уже существует');
+    return;
+  }
+
+  users.push({ name, email, phone, password });
+  localStorage.setItem('users', JSON.stringify(users));
+  localStorage.setItem('currentUser', JSON.stringify({ name, email, phone }));
+
+  enterSite({ name, email, phone });
+});
+
+document.getElementById('loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const email = fd.get('email').trim();
+  const password = fd.get('password');
+
+  const emailCheck = validateEmail(email);
+  if (!emailCheck.valid) {
+    showError('loginError', 'Неверный формат email');
+    return;
+  }
+
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+
+  if (!user) {
+    showError('loginError', 'Неверный email или пароль');
+    return;
+  }
+
+  localStorage.setItem('currentUser', JSON.stringify({ name: user.name, email: user.email, phone: user.phone }));
+  enterSite({ name: user.name, email: user.email, phone: user.phone });
+});
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+function enterSite(user) {
+  authScreen.classList.add('hidden');
+  siteWrapper.classList.add('visible');
+  updateUserUI(user);
+  loadProfile();
+  renderTrips();
+  renderSupport();
+  renderChat();
+}
+
+function updateUserUI(user) {
+  document.getElementById('navName').textContent = user.name;
+  document.getElementById('navAvatar').textContent = user.name[0].toUpperCase();
+}
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  localStorage.removeItem('currentUser');
+  siteWrapper.classList.remove('visible');
+  authScreen.classList.remove('hidden');
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+  document.getElementById('loginForm').classList.add('active');
+  authTabs.forEach(t => t.classList.remove('active'));
+  authTabs[0].classList.add('active');
+  document.getElementById('loginForm').reset();
+  document.getElementById('registerForm').reset();
+  emailHint.classList.remove('show');
+  regEmail.classList.remove('error');
+});
+
+const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+if (currentUser) {
+  enterSite(currentUser);
+}
+
+// ===== ТЕМА =====
+const themeToggle = document.getElementById('themeToggle');
+const savedTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+themeToggle.textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+
+themeToggle.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  themeToggle.textContent = next === 'dark' ? '🌙' : '☀️';
+});
+
+document.getElementById('burger').addEventListener('click', () => {
+  document.getElementById('navLinks').classList.toggle('open');
+});
+
+// ===== ДАННЫЕ =====
+let trips = JSON.parse(localStorage.getItem('trips')) || [
+  { id: 1, driver: 'Алексей', from: 'Москва', to: 'Санкт-Петербург', date: '2026-11-20', time: '08:00', seats: 3, price: 1500, comment: 'Toyota Camry' },
+  { id: 2, driver: 'Мария', from: 'Казань', to: 'Уфа', date: '2026-11-18', time: '14:00', seats: 2, price: 800, comment: 'Hyundai Solaris' },
+  { id: 3, driver: 'Дмитрий', from: 'Екатеринбург', to: 'Челябинск', date: '2026-11-22', time: '10:30', seats: 4, price: 600, comment: 'Kia Rio' }
+];
+function saveTrips() { localStorage.setItem('trips', JSON.stringify(trips)); }
+
+document.getElementById('createForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const profile = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  trips.unshift({
+    id: Date.now(),
+    driver: profile.name || 'Вы',
+    from: fd.get('from'), to: fd.get('to'),
+    date: fd.get('date'), time: fd.get('time'),
+    seats: +fd.get('seats'), price: +fd.get('price'),
+    comment: fd.get('comment')
+  });
+  saveTrips();
+  alert('✅ Поездка опубликована!');
+  e.target.reset();
+  navigate('search');
+});
+
+// ===== ДЕЛЕГИРОВАНИЕ КНОПОК ПОЕЗДКИ =====
+document.getElementById('tripsList').addEventListener('click', e => {
+  const writeBtn = e.target.closest('.btn-write-chat');
+  if (writeBtn) { openChat(writeBtn.dataset.driver); return; }
+  const mapBtn = e.target.closest('.btn-show-map');
+  if (mapBtn) { openMap(mapBtn.dataset.from, mapBtn.dataset.to, mapBtn.dataset.driver); return; }
+  const reviewsBtn = e.target.closest('.btn-show-reviews');
+  if (reviewsBtn) { openReviewsModal(reviewsBtn.dataset.driver, reviewsBtn.dataset.from, reviewsBtn.dataset.to); }
+});
+
+// ===== ОТЗЫВЫ =====
+let reviews = JSON.parse(localStorage.getItem('reviews')) || [
+  { id: 1, driver: 'Алексей', from: 'Иван', rating: 5, text: 'Отличный водитель! Ехали комфортно, машина чистая. Рекомендую!', route: 'Москва → Санкт-Петербург', date: '2026-11-10' },
+  { id: 2, driver: 'Алексей', from: 'Ольга', rating: 5, text: 'Всё супер, вовремя забрал, довёз быстро. Буду обращаться ещё.', route: 'Москва → Санкт-Петербург', date: '2026-11-08' },
+  { id: 3, driver: 'Мария', from: 'Дмитрий', rating: 4, text: 'Хорошая поездка, немного опоздала на старте, но в целом всё отлично.', route: 'Казань → Уфа', date: '2026-11-05' },
+  { id: 4, driver: 'Дмитрий', from: 'Анна', rating: 5, text: 'Классный водитель, весёлая компания, доехали быстро!', route: 'Екатеринбург → Челябинск', date: '2026-11-03' },
+  { id: 5, driver: 'Мария', from: 'Сергей', rating: 5, text: 'Аккуратная езда, приятная беседа. Спасибо!', route: 'Казань → Уфа', date: '2026-10-28' }
+];
+function saveReviews() { localStorage.setItem('reviews', JSON.stringify(reviews)); }
+
+function getDriverRating(driver) {
+  const driverReviews = reviews.filter(r => r.driver === driver);
+  if (driverReviews.length === 0) return { avg: 0, count: 0 };
+  const avg = driverReviews.reduce((sum, r) => sum + r.rating, 0) / driverReviews.length;
+  return { avg: avg.toFixed(1), count: driverReviews.length };
+}
+
+function starsHtml(rating, max = 5) {
+  const full = Math.floor(rating);
+  const empty = max - full;
+  return '★'.repeat(full) + '☆'.repeat(empty);
+}
+
+function renderTrips(filter = {}) {
+  const list = document.getElementById('tripsList');
+  let filtered = trips;
+  if (filter.from) filtered = filtered.filter(t => t.from.toLowerCase().includes(filter.from.toLowerCase()));
+  if (filter.to) filtered = filtered.filter(t => t.to.toLowerCase().includes(filter.to.toLowerCase()));
+  if (filter.date) filtered = filtered.filter(t => t.date === filter.date);
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="form-card" style="text-align:center; color:var(--text-muted);">Поездок не найдено 😔</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(t => {
+    const rating = getDriverRating(t.driver);
+    const ratingBlock = rating.count > 0
+      ? `<div class="trip-rating">
+           <span class="stars">${starsHtml(Math.round(rating.avg))}</span>
+           <span class="rating-num">${rating.avg}</span>
+           <span class="count">(${rating.count} отзывов)</span>
+         </div>`
+      : `<div class="trip-rating"><span class="count" style="color:var(--text-muted); font-style:italic;">Отзывов пока нет</span></div>`;
+
+    return `
+    <div class="trip-card">
+      <div class="trip-avatar">${t.driver[0]}</div>
+      <div class="trip-info">
+        <h3>${t.from} → ${t.to}</h3>
+        <div class="trip-meta">
+          <span>👤 ${t.driver}</span>
+          <span>📅 ${t.date} ${t.time}</span>
+          <span>💺 Мест: ${t.seats}</span>
+          ${t.comment ? `<span>💬 ${t.comment}</span>` : ''}
+        </div>
+        ${ratingBlock}
+        <div class="trip-actions">
+          <button type="button" class="btn btn-primary btn-sm btn-write-chat" data-driver="${t.driver}">Написать</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-show-map" data-from="${t.from}" data-to="${t.to}" data-driver="${t.driver}">🗺️ Маршрут</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-show-reviews" data-driver="${t.driver}" data-from="${t.from}" data-to="${t.to}">⭐ Отзывы</button>
+        </div>
+      </div>
+      <div>
+        <div class="trip-price">${t.price} ₽</div>
+      </div>
+    </div>
+  `}).join('');
+}
+
+document.getElementById('searchBtn').addEventListener('click', () => {
+  renderTrips({
+    from: document.getElementById('searchFrom').value,
+    to: document.getElementById('searchTo').value,
+    date: document.getElementById('searchDate').value
+  });
+});
+
+// ===== МОДАЛКА ОТЗЫВОВ =====
+function openReviewsModal(driver, from, to) {
+  const driverReviews = reviews.filter(r => r.driver === driver);
+  const rating = getDriverRating(driver);
+  const modal = document.getElementById('reviewsModal');
+  const title = document.getElementById('reviewsModalTitle');
+  const body = document.getElementById('reviewsModalBody');
+
+  title.textContent = `Отзывы о ${driver}`;
+
+  let reviewsHtml = '';
+  if (driverReviews.length === 0) {
+    reviewsHtml = '<div class="no-reviews">Отзывов пока нет. Будьте первым! 🌟</div>';
+  } else {
+    reviewsHtml = driverReviews.map(r => `
+      <div class="review-item">
+        <div class="review-item-header">
+          <div class="review-item-author">
+            <div class="review-item-avatar">${r.from[0]}</div>
+            <div>
+              <div class="review-item-name">${r.from}</div>
+              <div class="review-item-date">${r.date}</div>
+            </div>
+          </div>
+          <div class="review-item-stars">${starsHtml(r.rating)}</div>
+        </div>
+        <div class="review-item-text">${r.text}</div>
+        <div class="review-item-route">🗺️ ${r.route}</div>
+      </div>
+    `).join('');
+  }
+
+  const profile = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const userName = profile.name || 'Гость';
+
+  body.innerHTML = `
+    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
+      <div style="font-family:'Playfair Display',serif; font-size:3rem; font-weight:900; color:var(--text-main);">${rating.avg || '—'}</div>
+      <div>
+        <div style="color:var(--star-color); font-size:1.2rem;">${rating.count > 0 ? starsHtml(Math.round(rating.avg)) : '☆☆☆☆☆'}</div>
+        <div style="color:var(--text-muted); font-size:0.9rem;">На основе ${rating.count} отзывов</div>
+      </div>
+    </div>
+    ${reviewsHtml}
+    <div class="add-review-inline">
+      <h4>Оставить отзыв о ${driver}</h4>
+      <form id="inlineReviewForm">
+        <div class="form-group">
+          <label>Маршрут</label>
+          <input type="text" name="route" value="${from} → ${to}" required>
+        </div>
+        <div class="form-group">
+          <label>Оценка</label>
+          <div class="star-rating" id="modalStarRating">
+            <span class="star active" data-value="1">★</span>
+            <span class="star active" data-value="2">★</span>
+            <span class="star active" data-value="3">★</span>
+            <span class="star active" data-value="4">★</span>
+            <span class="star active" data-value="5">★</span>
+          </div>
+          <input type="hidden" name="rating" id="modalReviewRatingInput" value="5">
+        </div>
+        <div class="form-group">
+          <label>Комментарий</label>
+          <textarea name="text" rows="3" placeholder="Расскажите о поездке..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Опубликовать отзыв</button>
+      </form>
+    </div>
+  `;
+
+  modal.classList.add('show');
+  let modalReviewRating = 5;
+
+  const starContainer = document.getElementById('modalStarRating');
+  const ratingInput = document.getElementById('modalReviewRatingInput');
+
+  starContainer.addEventListener('click', e => {
+    const star = e.target.closest('.star');
+    if (!star) return;
+    modalReviewRating = parseInt(star.dataset.value);
+    ratingInput.value = modalReviewRating;
+    starContainer.querySelectorAll('.star').forEach((s, i) => {
+      s.classList.toggle('active', i < modalReviewRating);
+    });
+  });
+
+  starContainer.addEventListener('mouseover', e => {
+    const star = e.target.closest('.star');
+    if (!star) return;
+    const val = parseInt(star.dataset.value);
+    starContainer.querySelectorAll('.star').forEach((s, i) => {
+      s.classList.toggle('active', i < val);
+    });
+  });
+
+  starContainer.addEventListener('mouseout', () => {
+    starContainer.querySelectorAll('.star').forEach((s, i) => {
+      s.classList.toggle('active', i < modalReviewRating);
+    });
+  });
+
+  document.getElementById('inlineReviewForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const newReview = {
+      id: Date.now(),
+      driver: driver,
+      from: userName,
+      rating: parseInt(fd.get('rating')),
+      text: fd.get('text').trim(),
+      route: fd.get('route').trim(),
+      date: new Date().toISOString().split('T')[0]
+    };
+    reviews.unshift(newReview);
+    saveReviews();
+    renderTrips();
+    openReviewsModal(driver, from, to);
+  });
+}
+
+
+
+function openMap(from, to, driver) {
+  const fromCity = findCity(from);
+  const toCity = findCity(to);
+
+  if (!fromCity || !toCity) {
+    alert('Не удалось найти координаты одного из городов');
+    return;
+  }
+
+  document.getElementById('mapTitle').textContent = `${from} → ${to} · ${driver}`;
+
+  const distance = Math.round(calculateDistance(fromCity.lat, fromCity.lng, toCity.lat, toCity.lng));
+  const duration = Math.round(distance / 80);
+
+  document.getElementById('mapInfo').innerHTML = `
+    <div class="map-info-item">
+      <div class="label">Расстояние</div>
+      <div class="value">${distance} км</div>
+    </div>
+    <div class="map-info-item">
+      <div class="label">Время в пути</div>
+      <div class="value">~${duration} ч</div>
+    </div>
+    <div class="map-info-item">
+      <div class="label">Водитель</div>
+      <div class="value">${driver}</div>
+    </div>
+  `;
+
+  document.getElementById('mapModal').classList.add('show');
+
+  setTimeout(() => {
+    if (mapInstance) mapInstance.remove();
+
+    mapInstance = L.map('mapContainer').setView([
+      (fromCity.lat + toCity.lat) / 2,
+      (fromCity.lng + toCity.lng) / 2
+    ], 5);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 18
+    }).addTo(mapInstance);
+
+    const startIcon = L.divIcon({
+      html: '<div style="background:#5C1F2E;width:20px;height:20px;border-radius:50%;border:3px solid #EDE3C8;box-shadow:0 0 10px rgba(0,0,0,0.5);"></div>',
+      className: '',
+      iconSize: [20, 20]
+    });
+    const endIcon = L.divIcon({
+      html: '<div style="background:#7a2a3e;width:20px;height:20px;border-radius:50%;border:3px solid #EDE3C8;box-shadow:0 0 10px rgba(0,0,0,0.5);"></div>',
+      className: '',
+      iconSize: [20, 20]
+    });
+
+    L.marker([fromCity.lat, fromCity.lng], { icon: startIcon })
+      .addTo(mapInstance)
+      .bindPopup(`<b>Откуда:</b> ${from}`);
+
+    L.marker([toCity.lat, toCity.lng], { icon: endIcon })
+      .addTo(mapInstance)
+      .bindPopup(`<b>Куда:</b> ${to}`);
+
+    const latlngs = [[fromCity.lat, fromCity.lng], [toCity.lat, toCity.lng]];
+    L.polyline(latlngs, {
+      color: '#5C1F2E',
+      weight: 4,
+      opacity: 0.8,
+      dashArray: '10, 10'
+    }).addTo(mapInstance);
+
+    mapInstance.fitBounds(L.latLngBounds(latlngs), { padding: [50, 50] });
+  }, 100);
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ===== ЧАТ =====
+const chats = JSON.parse(localStorage.getItem('chats') || '{}');
+let currentChat = null;
+
+function renderChat() {
+  const box = document.getElementById('chatMessages');
+  const nameEl = document.getElementById('chatName');
+  const avatarEl = document.getElementById('chatAvatar');
+  if (!currentChat) {
+    nameEl.textContent = 'Выберите диалог';
+    avatarEl.textContent = '?';
+    box.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top:3rem; font-size:1.1rem;">Пока пусто. Нажмите "Написать" у поездки в поиске 👋</div>';
+    return;
+  }
+  const msgs = chats[currentChat] || [];
+  nameEl.textContent = currentChat;
+  avatarEl.textContent = currentChat[0];
+  if (msgs.length === 0) {
+    box.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top:3rem; font-size:1.1rem;">Начните диалог с ' + currentChat + ' 👋</div>';
+  } else {
+    box.innerHTML = msgs.map(m => `
+      <div class="message ${m.from}">${m.text}<span class="time">${m.time}</span></div>
+    `).join('');
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+document.getElementById('chatContacts').addEventListener('click', e => {
+  const contact = e.target.closest('.chat-contact');
+  if (contact) {
+    document.querySelectorAll('.chat-contact').forEach(x => x.classList.remove('active'));
+    contact.classList.add('active');
+    currentChat = contact.dataset.driver;
+    renderChat();
+  }
+});
+
+document.getElementById('chatForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('chatInput');
+  if (!input.value.trim() || !currentChat) return;
+  const time = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  if (!chats[currentChat]) chats[currentChat] = [];
+  chats[currentChat].push({ from: 'out', text: input.value, time });
+  localStorage.setItem('chats', JSON.stringify(chats));
+  input.value = '';
+  renderChat();
+  setTimeout(() => {
+    const replies = ['Понял, спасибо!', 'Хорошо, договорились 👍', 'Ок, буду ждать', 'Отлично!'];
+    chats[currentChat].push({
+      from: 'in',
+      text: replies[Math.floor(Math.random() * replies.length)],
+      time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
+    });
+    localStorage.setItem('chats', JSON.stringify(chats));
+    renderChat();
+  }, 1200);
+});
+
+window.openChat = function(driver) {
+  currentChat = driver;
+  const contacts = document.getElementById('chatContacts');
+  let existing = document.querySelector(`[data-driver="${driver}"]`);
+  if (!existing) {
+    const newContact = document.createElement('div');
+    newContact.className = 'chat-contact active';
+    newContact.dataset.driver = driver;
+    newContact.innerHTML = `
+      <div class="avatar">${driver[0]}</div>
+      <div>
+        <div class="contact-name">${driver}</div>
+        <div class="contact-msg">Новый диалог</div>
+      </div>
+    `;
+    contacts.prepend(newContact);
+    existing = newContact;
+  }
+  document.querySelectorAll('.chat-contact').forEach(x => x.classList.remove('active'));
+  existing.classList.add('active');
+  navigate('chat');
+  renderChat();
+};
+
+// ===== ПОДДЕРЖКА =====
+const supportMsgs = JSON.parse(localStorage.getItem('support') || 'null') || [
+  { from: 'in', text: 'Здравствуйте! Чем могу помочь?', time: '09:00' }
+];
+function renderSupport() {
+  const box = document.getElementById('supportMessages');
+  box.innerHTML = supportMsgs.map(m => `
+    <div class="message ${m.from}">${m.text}<span class="time">${m.time}</span></div>
+  `).join('');
+  box.scrollTop = box.scrollHeight;
+}
+document.getElementById('supportForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('supportInput');
+  if (!input.value.trim()) return;
+  const time = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  supportMsgs.push({ from: 'out', text: input.value, time });
+  input.value = '';
+  localStorage.setItem('support', JSON.stringify(supportMsgs));
+  renderSupport();
+  setTimeout(() => {
+    const replies = ['Спасибо за обращение! Разбираемся.', 'Понял, передам специалисту.', 'Уточните детали?', 'Ваш вопрос принят.'];
+    supportMsgs.push({ from: 'in', text: replies[Math.floor(Math.random() * replies.length)], time });
+    localStorage.setItem('support', JSON.stringify(supportMsgs));
+    renderSupport();
+  }, 1500);
+});
+
+// ===== ПРОФИЛЬ =====
+function loadProfile() {
+  const p = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  document.getElementById('profileName').textContent = p.name || 'Гость';
+  document.getElementById('profileEmail').textContent = p.email || '—';
+  document.getElementById('profileAvatar').textContent = (p.name || '?')[0].toUpperCase();
+  document.getElementById('profName').value = p.name || '';
+  document.getElementById('profEmail').value = p.email || '';
+  document.getElementById('profPhone').value = p.phone || '';
+  document.getElementById('profCity').value = p.city || '';
+}
+document.getElementById('profileForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const profile = {
+    name: fd.get('name'),
+    email: fd.get('email'),
+    phone: fd.get('phone'),
+    city: fd.get('city')
+  };
+  localStorage.setItem('currentUser', JSON.stringify(profile));
+  const users = JSON.parse(localStorage.getItem('users') || '[]');
+  const idx = users.findIndex(u => u.email === profile.email);
+  if (idx !== -1) {
+    users[idx] = { ...users[idx], ...profile };
+    localStorage.setItem('users', JSON.stringify(users));
+  }
+  updateUserUI(profile);
+  loadProfile();
+  alert('✅ Профиль сохранён!');
+});
+</script>
+</body>
+</html>
